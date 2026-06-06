@@ -240,6 +240,22 @@ pub fn render_app(app: &mut App, ctx: &egui::Context) {
 
             ui.add_space(8.0);
 
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut app.fast_scan, "Fast Scan");
+                if app.fast_scan {
+                    egui::ComboBox::from_id_salt("fs_align")
+                        .width(60.0)
+                        .selected_text(app.fast_scan_alignment.to_string())
+                        .show_ui(ui, |ui| {
+                            for align in [1, 2, 4, 8] {
+                                ui.selectable_value(&mut app.fast_scan_alignment, align, align.to_string());
+                            }
+                        });
+                }
+            });
+
+            ui.add_space(8.0);
+
             if app.scanning {
                 ui.add(egui::ProgressBar::new(app.scan_progress).animate(true));
             }

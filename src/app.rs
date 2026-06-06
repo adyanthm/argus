@@ -32,6 +32,9 @@ pub struct App {
     pub filter_mode: FilterMode,
     pub scan_value: String,
 
+    pub fast_scan: bool,
+    pub fast_scan_alignment: usize,
+
     pub scan_results: Option<ScanResults>,
     pub display_results: Vec<ScanResult>,
     pub result_count: usize,
@@ -60,6 +63,8 @@ impl Default for App {
             scan_mode: ScanMode::Exact,
             filter_mode: FilterMode::Exact,
             scan_value: String::new(),
+            fast_scan: true,
+            fast_scan_alignment: 4,
             scan_results: None,
             display_results: Vec::new(),
             result_count: 0,
@@ -108,6 +113,7 @@ impl App {
             self.value_type,
             self.scan_mode,
             target,
+            if self.fast_scan { self.fast_scan_alignment } else { 1 },
             tx,
         );
     }
@@ -148,6 +154,7 @@ impl App {
             self.value_type,
             self.filter_mode,
             target,
+            if self.fast_scan { self.fast_scan_alignment } else { 1 },
             previous,
             tx,
         );
@@ -234,11 +241,9 @@ impl App {
         *running = true;
 
         let frozen = Arc::clone(&self.frozen_entries);
-        let flag = Arc::clone(&self.freeze_running);
 
         if let Some(process) = &self.process {
-            let pid = process.pid;
-            let name = process.name.clone();
+            let handle = Arc::clone(process);
 
             thread::spawn(move || loop {
                 thread::sleep(Duration::from_millis(100));
@@ -246,13 +251,6 @@ impl App {
                 if entries.is_empty() {
                     continue;
                 }
-                let handle = match ProcessHandle::open(pid, name.clone()) {
-                    Ok(h) => h,
-                    Err(_) => {
-                        *flag.lock().unwrap() = false;
-                        return;
-                    }
-                };
                 for entry in &entries {
                     if let Some(bytes) = entry.value_type.parse_value(&entry.frozen_value) {
                         memory::write_memory(&handle, entry.address, &bytes);

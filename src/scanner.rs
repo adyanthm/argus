@@ -307,6 +307,7 @@ pub fn first_scan(
     vtype: ValueType,
     mode: ScanMode,
     target: Option<Vec<u8>>,
+    alignment: usize,
     tx: mpsc::Sender<ScanMessage>,
 ) {
     thread::spawn(move || {
@@ -357,12 +358,16 @@ pub fn first_scan(
 
         let results: Vec<ScanResult> = regions.par_iter().enumerate().flat_map(|(_i, region)| {
             let mut local_results = Vec::new();
+            let align = alignment.max(1);
             if let Some(data) = memory::read_memory(&handle, region.base_address, region.size) {
                 if data.len() >= val_size {
                     if mode == ScanMode::Exact && !target.is_empty() {
                         // fast simd exact match
                         let first_byte = target[0];
                         for offset in memchr::memchr_iter(first_byte, &data) {
+                            if (region.base_address + offset) % align != 0 {
+                                continue;
+                            }
                             if offset + val_size <= data.len() {
                                 let chunk = &data[offset..offset + val_size];
                                 if chunk == target {
@@ -380,7 +385,8 @@ pub fn first_scan(
                         }
                     } else {
                         // fallback match
-                        for offset in 0..=(data.len() - val_size) {
+                        let start_offset = (align - (region.base_address % align)) % align;
+                        for offset in (start_offset..=(data.len() - val_size)).step_by(align) {
                             let chunk = &data[offset..offset + val_size];
                             if matches_scan(chunk, &target, vtype, mode) {
                                 let mut val = [0u8; 32];
@@ -414,6 +420,7 @@ pub fn next_scan(
     vtype: ValueType,
     mode: FilterMode,
     target: Option<Vec<u8>>,
+    alignment: usize,
     previous_results: ScanResults,
     tx: mpsc::Sender<ScanMessage>,
 ) {
@@ -484,10 +491,12 @@ pub fn next_scan(
 
                 let results: Vec<ScanResult> = snapshot.par_iter().enumerate().flat_map(|(_i, (base, old_data))| {
                     let mut local_results = Vec::new();
+                    let align = alignment.max(1);
                     if let Some(new_data) = memory::read_memory(&handle, *base, old_data.len()) {
                         let len = old_data.len().min(new_data.len());
                         if len >= val_size {
-                            for offset in 0..=(len - val_size) {
+                            let start_offset = (align - (*base % align)) % align;
+                            for offset in (start_offset..=(len - val_size)).step_by(align) {
                                 let old_chunk = &old_data[offset..offset + val_size];
                                 let new_chunk = &new_data[offset..offset + val_size];
                                 if matches_filter(new_chunk, old_chunk, target_ref, vtype, mode) {
